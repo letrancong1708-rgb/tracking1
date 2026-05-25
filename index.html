@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hand Tracking - Random Chuẩn Hóa</title>
+    <title>Hand Tracking - Kết Nối Chuẩn Phẳng</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
@@ -30,8 +30,8 @@
     <video id="webcam" autoplay playsinline muted></video>
     <canvas id="output_canvas" width="640" height="480"></canvas>
     <div id="status-board">
-        Trạng thái: <span id="state-text" class="highlight">Đang quét Firebase phẳng...</span><br>
-        <span id="guide-text">Hệ thống đang nạp dữ liệu ảnh.</span>
+        Trạng thái: <span id="state-text" class="highlight">Đang đọc dữ liệu...</span><br>
+        <span id="guide-text">Hệ thống đang kết nối trực tiếp tới node images.</span>
         <div class="upload-zone"><button class="clear-btn" onclick="resetCanvas()">Xóa ảnh hiện tại</button></div>
     </div>
 </div>
@@ -60,32 +60,39 @@ let lastSelectedIndex = -1;
 let demoImage = new Image();
 demoImage.src = 'Messenger_creation_9EB2B51C-92B8-488E-9497-D1F38A0530A5.jpeg'; 
 
-// Đọc trực tiếp từ node phẳng 'images' chuẩn hóa
+// Đọc chuẩn xác trực tiếp từ node 'images' phẳng mới cập nhật của bạn
 database.ref('images').on('value', (snapshot) => {
     const data = snapshot.val();
     if (data) {
-        // Chuyển đổi linh hoạt dữ liệu Firebase sang mảng sạch
-        dbImages = Array.isArray(data) ? data.filter(i => i) : Object.values(data);
-        stateText.innerText = "ĐÃ ĐỒNG BỘ: " + dbImages.length + " ẢNH TRÊN FIREBASE";
+        // Chuyển đổi dữ liệu linh hoạt (cho cả mảng và object) và lọc bỏ giá trị rỗng nếu có
+        dbImages = Array.isArray(data) ? data.filter(i => i !== null && i !== undefined) : Object.values(data);
+        stateText.innerText = "KẾT NỐI THÀNH CÔNG (" + dbImages.length + " ẢNH)";
         stateText.style.color = "#00ffcc";
+        console.log("Danh sách ảnh đã đồng bộ thành công:", dbImages);
     } else {
-        stateText.innerText = "LỖI: DATABASE ĐANG TRỐNG";
+        stateText.innerText = "DỮ LIỆU TRÊN FIREBASE ĐANG TRỐNG";
         stateText.style.color = "#ff4444";
     }
+}, (error) => {
+    stateText.innerText = "LỖI: BỊ RULES FIREBASE CHẶN";
+    stateText.style.color = "#ff4444";
 });
 
 function pickRandomImage() {
-    if (dbImages.length > 1) {
+    if (dbImages && dbImages.length > 1) {
         let randomIndex = Math.floor(Math.random() * dbImages.length);
+        // Vòng lặp đảm bảo không bốc trùng vào ảnh vừa hiển thị trước đó
         while (randomIndex === lastSelectedIndex) {
             randomIndex = Math.floor(Math.random() * dbImages.length);
         }
         lastSelectedIndex = randomIndex;
         demoImage.src = dbImages[randomIndex];
         
-        // Hiệu ứng nháy sáng xác nhận đổi ảnh
-        canvasElement.style.filter = "brightness(1.7)";
+        // Hiệu ứng nháy sáng nhẹ màn hình báo hiệu đổi ảnh thành công
+        canvasElement.style.filter = "brightness(1.6)";
         setTimeout(() => { canvasElement.style.filter = "none"; }, 100);
+    } else if (dbImages && dbImages.length === 1) {
+        demoImage.src = dbImages[0];
     }
 }
 
@@ -131,7 +138,7 @@ function onResults(results) {
             isPinchingBefore = true;
         }
         stateText.innerText = "ĐANG ĐIỀU CHỈNH ẢNH RANDOM";
-        guideText.innerText = "Kéo giãn 2 tay để chỉnh kích cỡ. Buông tay ra để GHIM.";
+        guideText.innerText = "Kéo giãn hoặc thu hẹp 2 tay để chỉnh kích cỡ. Buông tay ra để GHIM.";
 
         const smooth_p1 = getSmoothPoint(currentPinchPoints[0], history_p1);
         const smooth_p2 = getSmoothPoint(currentPinchPoints[1], history_p2);
@@ -144,7 +151,7 @@ function onResults(results) {
         isPinchingBefore = false; 
         if (last_fixed_points) {
             stateText.innerText = "ẢNH ĐÃ ĐƯỢC GHIM";
-            guideText.innerText = "Chụm 2 tay lại một lần nữa để lấy NGẪN NHIÊN ảnh khác.";
+            guideText.innerText = "Chụm 2 tay lại lần nữa để lấy NGẪU NHIÊN một bức ảnh khác.";
         } else {
             stateText.innerText = "SẴN SÀNG QUÉT TAY";
             guideText.innerText = "CHỤM ngón cái và ngón trỏ của CẢ 2 TAY lại để gọi ảnh ngẫu nhiên.";
