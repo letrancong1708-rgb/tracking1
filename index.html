@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hand Tracking - Quét Ảnh Random Từ Firebase</title>
+    <title>Hand Tracking - Quét Ảnh Random Tuyệt Đối</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
     
@@ -32,6 +32,7 @@
             transform: scaleX(-1);
             border-radius: 16px;
             box-shadow: 0 20px 50px rgba(0, 255, 204, 0.15);
+            transition: filter 0.1s ease;
         }
         #status-board {
             position: absolute; top: 20px; left: 20px; right: 20px;
@@ -59,7 +60,7 @@
     
     <div id="status-board">
         Trạng thái: <span id="state-text" class="highlight">Đang kết nối Firebase...</span><br>
-        <span id="guide-text">Hệ thống đang đồng bộ dữ liệu ảnh miễn phí.</span>
+        <span id="guide-text">Hệ thống đang đồng bộ dữ liệu ảnh từ Realtime Database.</span>
         
         <div class="upload-zone">
             <button class="clear-btn" onclick="resetCanvas()">Xóa ảnh hiện tại</button>
@@ -79,7 +80,7 @@ const firebaseConfig = {
   measurementId: "G-71B5Z83C5M"
 };
 
-// Khởi tạo ứng dụng Firebase
+// Khởi tạo Firebase
 firebase.initializeApp(firebaseConfig);
 const database = firebase.database();
 
@@ -91,51 +92,59 @@ const guideText = document.getElementById('guide-text');
 const statusBoard = document.getElementById('status-board');
 
 let dbImages = []; 
+let lastSelectedIndex = -1; 
 let demoImage = new Image();
 demoImage.src = 'Messenger_creation_9EB2B51C-92B8-488E-9497-D1F38A0530A5.jpeg'; 
 
-// Hàm lắng nghe Firebase động (Quét cả cấu trúc lồng lẫn cấu trúc phẳng)
-function connectFirebase() {
-    // 1. Thử quét cấu trúc phẳng trước
-    database.ref('images').on('value', (snapshot) => {
-        const data = snapshot.val();
-        if (data) {
-            // Nếu data chứa mảng lồng bên trong như cấu trúc hiện tại của bạn
-            if (data[0] && data[0].images) {
-                dbImages = Object.values(data[0].images);
-            } else if (typeof data === 'object') {
-                // Nếu là cấu trúc phẳng chuẩn hoặc mảng thông thường
-                dbImages = Object.values(data);
+// ĐÃ SỬA ĐƯỜNG DẪN: Trỏ chuẩn xác vào cấu trúc images -> images hiện tại của bạn
+database.ref('images/images').on('value', (snapshot) => {
+    const data = snapshot.val();
+    if (data) {
+        dbImages = Object.values(data);
+        stateText.innerText = "KẾT NỐI FIREBASE THÀNH CÔNG (" + dbImages.length + " ẢNH)";
+        stateText.style.color = "#00ffcc";
+        console.log("Danh sách ảnh nhận từ Firebase:", dbImages);
+    } else {
+        // Dự phòng quét ở nút gốc nếu cấu trúc bị thay đổi
+        database.ref('images').on('value', (snap2) => {
+            const data2 = snap2.val();
+            if (data2) {
+                if(data2.images) {
+                    dbImages = Object.values(data2.images);
+                } else {
+                    dbImages = Object.values(data2);
+                }
+                stateText.innerText = "KẾT NỐI FIREBASE THÀNH CÔNG (" + dbImages.length + " ẢNH)";
+                stateText.style.color = "#00ffcc";
+            } else {
+                stateText.innerText = "KHÔNG TÌM THẤY DỮ LIỆU ẢNH";
+                stateText.style.color = "#ff4444";
             }
-            stateText.innerText = "ĐỒNG BỘ FIREBASE THÀNH CÔNG (" + dbImages.length + " ẢNH)";
-            stateText.style.color = "#00ffcc";
-            console.log("Danh sách ảnh hoạt động:", dbImages);
-        } else {
-            stateText.innerText = "FIREBASE TRỐNG DỮ LIỆU";
-            stateText.style.color = "#ff4444";
-        }
-    }, (error) => {
-        console.error(error);
-        stateText.innerText = "LỖI BẢO MẬT FIREBASE (XEM TAB RULES)";
-        stateText.style.color = "#ff4444";
-        guideText.innerText = "Hãy chuyển mục '.read' thành true trong tab Rules của Firebase Console.";
-    });
-}
+        });
+    }
+}, (error) => {
+    stateText.innerText = "BỊ CHẶN BỞI FIREBASE RULES";
+    stateText.style.color = "#ff4444";
+});
 
-connectFirebase();
-
-// Hàm lấy ngẫu nhiên ảnh khi chụm tay
+// Hàm lấy ngẫu nhiên ảnh cam kết không trùng lặp ảnh liền kề
 function pickRandomImage() {
-    if (dbImages.length > 0) {
-        const randomIndex = Math.floor(Math.random() * dbImages.length);
-        // Xử lý trường hợp mảng trả về một object chứa mảng con
-        let selectedSrc = dbImages[randomIndex];
-        if (typeof selectedSrc === 'object' && selectedSrc.images) {
-            const subArray = Object.values(selectedSrc.images);
-            selectedSrc = subArray[Math.floor(Math.random() * subArray.length)];
+    if (dbImages.length > 1) {
+        let randomIndex = Math.floor(Math.random() * dbImages.length);
+        while (randomIndex === lastSelectedIndex) {
+            randomIndex = Math.floor(Math.random() * dbImages.length);
         }
+        lastSelectedIndex = randomIndex;
+        
+        const selectedSrc = dbImages[randomIndex];
         demoImage.src = selectedSrc;
-        console.log("Đã đổi sang ảnh ngẫu nhiên mới:", selectedSrc);
+        console.log("Đã chọn ngẫu nhiên ảnh mới:", selectedSrc);
+
+        // Hiệu ứng chớp sáng nháy màn hình khi đổi ảnh thành công
+        canvasElement.style.filter = "brightness(1.8) contrast(1.2)";
+        setTimeout(() => { canvasElement.style.filter = "none"; }, 120);
+    } else if (dbImages.length === 1) {
+        demoImage.src = dbImages[0];
     }
 }
 
@@ -143,7 +152,7 @@ function getDistance(p1, p2) {
     return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
 }
 
-// CẤU HÌNH LÀM MỊN & ĐIỀU KHIỂN NÂNG CAO
+// CẤU HÌNH ĐIỀU KHIỂN HANDTRACKING
 const PINCH_THRESHOLD = 45; 
 const SMOOTHING_FACTOR = 4;   
 const MIN_CHANGE_THRESHOLD = 4; 
@@ -165,6 +174,8 @@ function resetCanvas() {
     history_p1 = [];
     history_p2 = [];
     isPinchingBefore = false;
+    lastSelectedIndex = -1;
+    demoImage.src = 'Messenger_creation_9EB2B51C-92B8-488E-9497-D1F38A0530A5.jpeg';
 }
 
 function drawHUDCorners(x, y, w, h, size = 20) {
@@ -214,7 +225,7 @@ function onResults(results) {
         statusBoard.style.borderLeftColor = "#00ffcc";
         stateText.innerText = "ĐANG ĐIỀU CHỈNH ẢNH RANDOM";
         stateText.style.color = "#00ffcc";
-        guideText.innerText = "Kéo giãn 2 tay để chỉnh kích cỡ. Buông tay ra để GHIM cố định bức ảnh này.";
+        guideText.innerText = "Kéo giãn 2 tay để chỉnh kích cỡ. Buông tay ra để GHIM cố định.";
 
         const smooth_p1 = getSmoothPoint(currentPinchPoints[0], history_p1);
         const smooth_p2 = getSmoothPoint(currentPinchPoints[1], history_p2);
@@ -238,7 +249,7 @@ function onResults(results) {
             statusBoard.style.borderLeftColor = "#ffaa00";
             stateText.innerText = "ẢNH ĐÃ ĐƯỢC GHIM";
             stateText.style.color = "#ffaa00";
-            guideText.innerText = "Chụm 2 tay lại một lần nữa để lấy NGẪN NHIÊN một bức ảnh khác từ Database.";
+            guideText.innerText = "Chụm 2 tay lại một lần nữa để lấy NGẪN NHIÊN một bức ảnh khác.";
         } else {
             statusBoard.style.borderLeftColor = "#0099ff";
             stateText.innerText = "SẴN SÀNG QUÉT TAY";
