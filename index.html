@@ -3,43 +3,71 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hand Tracking - Chụm Kéo Hiện Ảnh</title>
+    <title>Hand Tracking - Chụm Kéo Hiện Ảnh (Vercel Mobile Fix)</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
     <style>
         body {
             margin: 0; padding: 0;
-            background: #1a1a1a;
+            background: #111;
             display: flex; flex-direction: column;
             justify-content: center; align-items: center;
             height: 100vh; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
         }
-        .container { position: relative; width: 640px; height: 480px; }
+        .container { 
+            position: relative; 
+            width: 100vw; 
+            height: 100vh;
+            max-width: 640px; 
+            max-height: 480px; 
+            aspect-ratio: 4/3;
+        }
+        /* Giữ webcam ẩn đi để xử lý ngầm */
         #webcam { display: none; }
         #output_canvas {
             position: absolute; left: 0; top: 0;
-            border: 3px solid #333; border-radius: 12px;
+            width: 100%; height: 100%;
+            border-radius: 0px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-            transform: scaleX(-1); /* Lật gương */
+            transform: scaleX(-1); /* Lật gương để thuận tay người dùng */
         }
         #status-board {
             position: absolute; top: 15px; left: 15px; right: 15px;
-            background: rgba(0, 0, 0, 0.75); color: #fff;
-            padding: 12px; border-radius: 8px;
-            font-size: 14px; pointer-events: none;
-            line-height: 1.5; border-left: 5px solid #ffcc00;
+            background: rgba(0, 0, 0, 0.85); color: #fff;
+            padding: 15px; border-radius: 8px;
+            font-size: 14px;
+            line-height: 1.6; border-left: 5px solid #00ffcc;
+            z-index: 10;
         }
         .highlight { color: #00ffcc; font-weight: bold; }
+        
+        /* Khu vực nút bấm */
+        .upload-zone {
+            margin-top: 10px;
+        }
+        .upload-btn {
+            background: #00ffcc; color: #111;
+            padding: 8px 14px; border: none; border-radius: 4px;
+            font-weight: bold; cursor: pointer; font-size: 13px;
+        }
+        #image-loader { display: none; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <video id="webcam" autoplay playsinline></video>
+    <video id="webcam" autoplay playsinline muted></video>
     <canvas id="output_canvas" width="640" height="480"></canvas>
+    
     <div id="status-board">
-        Trạng thái: <span id="state-text" class="highlight">Đang tìm tay...</span><br>
-        <span id="guide-text">Hãy đưa bàn tay vào khung hình.</span>
+        Trạng thái: <span id="state-text" class="highlight">Đang khởi động Camera...</span><br>
+        <span id="guide-text">Vui lòng cho phép quyền truy cập Camera nếu có thông báo.</span>
+        
+        <div class="upload-zone">
+            <button class="upload-btn" onclick="document.getElementById('image-loader').click()">Chọn ảnh từ máy</button>
+            <input type="file" id="image-loader" accept="image/*">
+        </div>
     </div>
 </div>
 
@@ -50,104 +78,89 @@ const canvasCtx = canvasElement.getContext('2d');
 const stateText = document.getElementById('state-text');
 const guideText = document.getElementById('guide-text');
 
-// Tải ảnh mẫu
+// Khởi tạo ảnh mẫu ban đầu
 const demoImage = new Image();
 demoImage.src = 'https://picsum.photos/600/400'; 
 
-// Quản lý trạng thái hệ thống
-// Các trạng thái: 'IDLE' (Trống), 'PINCHED' (Đang chụm), 'DRAWING' (Đang kéo bung ảnh)
-let currentStatus = 'IDLE'; 
-let lockedPoints = null; // Lưu tọa độ tứ giác cuối cùng để giữ lại ảnh
+// Lắng nghe sự kiện tải ảnh mới từ máy/điện thoại
+document.getElementById('image-loader').addEventListener('change', function(e) {
+    const reader = new FileReader();
+    reader.onload = function(event) {
+        demoImage.src = event.target.result;
+        alert("Đã nhận ảnh mới thành công! Hãy chụm và bung tay để thử nghiệm.");
+    }
+    if(e.target.files[0]) {
+        reader.readAsDataURL(e.target.files[0]);
+    }
+});
 
-// Hàm tính khoảng cách Euclid giữa 2 điểm
+let currentStatus = 'IDLE'; 
+let lockedPoints = null; 
+
+// Hàm tính khoảng cách giữa 2 đầu ngón tay
 function getDistance(p1, p2) {
     return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
 }
 
 function onResults(results) {
     canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-    // Vẽ camera nền
+    // Vẽ camera nền lên Canvas
     canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
     if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-        const landmarks = results.multiHandLandmarks[0]; // Chỉ bắt 1 tay duy nhất
+        const landmarks = results.multiHandLandmarks[0];
 
-        // Lấy tọa độ các ngón tay quan trọng (đã nhân với kích thước canvas)
+        // Lấy tọa độ thực tế của các đầu ngón tay
         const thumbTip = { x: landmarks[4].x * canvasElement.width, y: landmarks[4].y * canvasElement.height };
         const indexTip = { x: landmarks[8].x * canvasElement.width, y: landmarks[8].y * canvasElement.height };
         const middleTip = { x: landmarks[12].x * canvasElement.width, y: landmarks[12].y * canvasElement.height };
         const ringTip = { x: landmarks[16].x * canvasElement.width, y: landmarks[16].y * canvasElement.height };
         const pinkyTip = { x: landmarks[20].x * canvasElement.width, y: landmarks[20].y * canvasElement.height };
 
-        const 4Tips = [indexTip, middleTip, ringTip, pinkyTip];
-
-        // 1. Tính toán khoảng cách chụm (Ngón cái vs Ngón trỏ)
+        const fourTips = [indexTip, middleTip, ringTip, pinkyTip];
         const pinchDistance = getDistance(thumbTip, indexTip);
         
-        // Ngưỡng chụm tay (tùy chỉnh nếu camera xa/gần, tầm 30-40 pixel là vừa)
-        const PINCH_THRESHOLD = 35; 
+        // Cấu hình lại ngưỡng chụm phù hợp với tiêu chuẩn màn hình di động
+        const PINCH_THRESHOLD = 40; 
 
-        // 2. XỬ LÝ MÁY TRẠNG THÁI
+        // Máy trạng thái điều khiển logic
         if (currentStatus === 'IDLE') {
             stateText.innerText = "SẴN SÀNG";
-            guideText.innerText = "HÃY CHỤM NGÓN CÁI VÀ NGÓN TRỎ LẠI ĐỂ KÍCH HOẠT.";
-            
-            if (pinchDistance < PINCH_THRESHOLD) {
-                currentStatus = 'PINCHED';
-            }
+            guideText.innerText = "HÃY CHỤM NGÓN CÁI VÀ NGÓN TRỎ LẠI ĐỂ KÍCH HOẠT VẼ.";
+            if (pinchDistance < PINCH_THRESHOLD) currentStatus = 'PINCHED';
         } 
         else if (currentStatus === 'PINCHED') {
             stateText.innerText = "ĐÃ KÍCH HOẠT (ĐANG CHỤM)";
             guideText.innerText = "BÂY GIỜ HÃY BUNG RỘNG 4 NGÓN TAY ĐỂ KÉO ẢNH RA.";
-            
-            // Nếu khoảng cách bắt đầu nới rộng ra -> Chuyển sang trạng thái vẽ/kéo
-            if (pinchDistance > PINCH_THRESHOLD + 15) {
-                currentStatus = 'DRAWING';
-            }
+            if (pinchDistance > PINCH_THRESHOLD + 20) currentStatus = 'DRAWING';
         } 
         else if (currentStatus === 'DRAWING') {
             stateText.innerText = "ĐANG KÉO TỨ GIÁC ẢNH";
-            guideText.innerText = "Xòe rộng để phóng to. Thu tay lại sát (chụm) để chốt khóa ảnh.";
-
-            // Cập nhật tọa độ tứ giác theo vị trí 4 đầu ngón tay hiện tại
-            lockedPoints = [...4Tips];
-
-            // Nếu người dùng chụm tay lại một lần nữa -> Khóa ảnh cố định tại đó luôn
-            if (pinchDistance < PINCH_THRESHOLD) {
-                currentStatus = 'LOCKED';
-            }
+            guideText.innerText = "Xòe rộng để căn chỉnh. Chụm ngón cái + trỏ lại lần nữa để KHÓA ảnh.";
+            lockedPoints = [...fourTips]; // Liên tục cập nhật tọa độ tứ giác theo tay
+            if (pinchDistance < PINCH_THRESHOLD) currentStatus = 'LOCKED';
         }
         else if (currentStatus === 'LOCKED') {
-            stateText.innerText = "ĐÃ KHÓA ẢNH";
-            guideText.innerText = "Ảnh đã được chốt cố định. Đưa tay ra xa hẳn hoặc chụm lại lâu để reset.";
-            
-            // Reset nếu muốn làm lại từ đầu (khi đưa tay ra xa hoặc không chụm nữa)
-            if (pinchDistance > PINCH_THRESHOLD + 40) {
-                // Giữ nguyên ảnh cũ, nhưng cho phép kích hoạt hình mới nếu chụm lại
-                currentStatus = 'IDLE'; 
-            }
+            stateText.innerText = "ĐÃ KHÓA ẢNH CỐ ĐỊNH";
+            guideText.innerText = "Ảnh đã được chốt. Rút tay ra hẳn. Muốn vẽ hình mới hãy chụm tay lại lâu.";
+            if (pinchDistance > PINCH_THRESHOLD + 50) currentStatus = 'IDLE'; 
         }
 
-        // Vẽ các tracker đầu ngón tay để người dùng dễ định vị
+        // Vẽ chấm định vị ngón tay giúp người dùng dễ nhìn thấy tay mình
         canvasCtx.fillStyle = '#00ffcc';
-        4Tips.forEach(pt => {
-            canvasCtx.beginPath();
-            canvasCtx.arc(pt.x, pt.y, 6, 0, 2 * Math.PI);
-            canvasCtx.fill();
+        fourTips.forEach(pt => {
+            canvasCtx.beginPath(); canvasCtx.arc(pt.x, pt.y, 6, 0, 2 * Math.PI); canvasCtx.fill();
         });
-        // Vẽ riêng nốt ngón cái màu vàng để nhận biết nút bấm chụm
-        canvasCtx.fillStyle = '#ffcc00';
-        canvasCtx.beginPath();
-        canvasCtx.arc(thumbTip.x, thumbTip.y, 7, 0, 2 * Math.PI);
-        canvasCtx.fill();
+        canvasCtx.fillStyle = '#ffcc00'; // Ngón cái màu vàng làm mốc bấm kích hoạt
+        canvasCtx.beginPath(); canvasCtx.arc(thumbTip.x, thumbTip.y, 7, 0, 2 * Math.PI); canvasCtx.fill();
     }
 
-    // 3. TIẾN HÀNH VẼ ẢNH (Dựa trên tọa độ đã lưu/khóa)
+    // Tiến hành vẽ ảnh vào không gian tứ giác
     if (lockedPoints && (currentStatus === 'DRAWING' || currentStatus === 'LOCKED' || currentStatus === 'IDLE')) {
-        // Vẽ viền tứ giác bằng nét đứt neon
+        // Vẽ viền nét đứt neon
         canvasCtx.strokeStyle = '#00ffcc';
         canvasCtx.lineWidth = 3;
-        canvasCtx.setLineDash([5, 5]);
+        canvasCtx.setLineDash([6, 6]);
         canvasCtx.beginPath();
         canvasCtx.moveTo(lockedPoints[0].x, lockedPoints[0].y);
         canvasCtx.lineTo(lockedPoints[1].x, lockedPoints[1].y);
@@ -155,9 +168,9 @@ function onResults(results) {
         canvasCtx.lineTo(lockedPoints[3].x, lockedPoints[3].y);
         canvasCtx.closePath();
         canvasCtx.stroke();
-        canvasCtx.setLineDash([]); // Reset nét liền
+        canvasCtx.setLineDash([]); 
 
-        // Đổ ảnh vào lòng tứ giác
+        // Kỹ thuật Clip ảnh vào tứ giác tự do
         canvasCtx.save();
         canvasCtx.beginPath();
         canvasCtx.moveTo(lockedPoints[0].x, lockedPoints[0].y);
@@ -167,7 +180,7 @@ function onResults(results) {
         canvasCtx.closePath();
         canvasCtx.clip();
 
-        // Thuật toán quét khung bao (Bounding Box) để co dãn ảnh
+        // Thuật toán quét khung Bounding Box để co dãn ảnh tương ứng
         const xs = lockedPoints.map(p => p.x);
         const ys = lockedPoints.map(p => p.y);
         const minX = Math.min(...xs);
@@ -182,30 +195,50 @@ function onResults(results) {
     }
 }
 
-// Cấu hình MediaPipe Hands
+// Khởi tạo MediaPipe Hands
 const hands = new Hands({
     locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
 });
-
 hands.setOptions({
-    maxNumHands: 1,
-    modelComplexity: 1,
-    minDetectionConfidence: 0.6, // Tăng độ chính xác nhận diện
-    minTrackingConfidence: 0.6
+    maxNumHands: 1, 
+    modelComplexity: 1, 
+    minDetectionConfidence: 0.5, 
+    minTrackingConfidence: 0.5
 });
 hands.onResults(onResults);
 
-// Khởi tạo camera
-const camera = new Camera(videoElement, {
-    onFrame: async () => {
-        await hands.send({image: videoElement});
-    },
-    width: 640,
-    height: 480
-});
-camera.start();
+// GIẢI PHÁP SỬA LỖI ĐEN CAMERA TRÊN ĐIỆN THOẠI (Dùng API Stream tiêu chuẩn của trình duyệt)
+if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    navigator.mediaDevices.getUserMedia({
+        video: {
+            facingMode: "user", // Sử dụng camera trước (đổi thành "environment" nếu muốn dùng cam sau)
+            width: { ideal: 640 },
+            height: { ideal: 480 }
+        }
+    }).then((stream) => {
+        videoElement.srcObject = stream;
+        videoElement.addEventListener('loadeddata', () => {
+            stateText.innerText = "SẴN SÀNG";
+            guideText.innerText = "Đang phân tích cử chỉ tay. Hãy đưa bàn tay của bạn lên.";
+            
+            // Hàm vòng lặp phân tích khung hình liên tục từ stream camera
+            async function predictWebcam() {
+                if (videoElement.readyState >= 2) {
+                    await hands.send({ image: videoElement });
+                }
+                requestAnimationFrame(predictWebcam);
+            }
+            predictWebcam();
+        });
+    }).catch((err) => {
+        console.error("Lỗi khởi tạo camera: ", err);
+        stateText.innerText = "LỖI CAMERA";
+        guideText.innerText = "Không thể truy cập camera. Vui lòng kiểm tra lại quyền cài đặt trình duyệt của bạn.";
+    });
+} else {
+    alert("Trình duyệt của bạn không hỗ trợ API Camera.");
+}
 </script>
 
 </body>
 </html>
-
