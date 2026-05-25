@@ -3,9 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hand Tracking - Giao Diện Quét Ảnh Sci-Fi Cao Cấp</title>
+    <title>Hand Tracking - Quét Ảnh Random Từ Firebase</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+
     <style>
         body {
             margin: 0; padding: 0;
@@ -31,30 +35,20 @@
         }
         #status-board {
             position: absolute; top: 20px; left: 20px; right: 20px;
-            background: rgba(15, 22, 28, 0.9); 
-            color: #ecf0f1;
+            background: rgba(15, 22, 28, 0.9); color: #ecf0f1;
             padding: 18px; border-radius: 12px; font-size: 14px;
             line-height: 1.6; border-left: 5px solid #00ffcc;
             z-index: 10;
             box-shadow: 0 10px 25px rgba(0,0,0,0.4);
             backdrop-filter: blur(10px);
-            transition: all 0.3s ease;
         }
         .highlight { color: #00ffcc; font-weight: bold; text-shadow: 0 0 10px rgba(0,255,204,0.5); }
-        .upload-zone { margin-top: 12px; display: flex; gap: 10px; }
-        .upload-btn {
-            background: linear-gradient(135deg, #00ffcc, #0099ff); color: #111;
-            padding: 8px 16px; border: none; border-radius: 6px;
-            font-weight: bold; cursor: pointer; font-size: 13px;
-            transition: transform 0.2s;
-        }
-        .upload-btn:active { transform: scale(0.95); }
+        .upload-zone { margin-top: 12px; }
         .clear-btn {
             background: rgba(255, 68, 68, 0.2); color: #ff4444;
             padding: 8px 16px; border: 1px solid #ff4444; border-radius: 6px;
             font-weight: bold; cursor: pointer; font-size: 13px;
         }
-        #image-loader { display: none; }
     </style>
 </head>
 <body>
@@ -64,18 +58,31 @@
     <canvas id="output_canvas" width="640" height="480"></canvas>
     
     <div id="status-board">
-        Trạng thái: <span id="state-text" class="highlight">Hệ thống đang tải...</span><br>
-        <span id="guide-text">Vui lòng đợi cấu hình camera di động.</span>
+        Trạng thái: <span id="state-text" class="highlight">Đang kết nối Firebase & Camera...</span><br>
+        <span id="guide-text">Hệ thống đang đồng bộ dữ liệu ảnh miễn phí.</span>
         
         <div class="upload-zone">
-            <button class="upload-btn" onclick="document.getElementById('image-loader').click()">Đổi ảnh tạm thời</button>
-            <button class="clear-btn" onclick="resetCanvas()">Xóa ảnh ghim</button>
-            <input type="file" id="image-loader" accept="image/*">
+            <button class="clear-btn" onclick="resetCanvas()">Xóa ảnh hiện tại</button>
         </div>
     </div>
 </div>
 
 <script>
+// Cấu hình Firebase của bạn
+const firebaseConfig = {
+  apiKey: "AIzaSyBfsARtLpOaWlAvugaU5q1t3thYMRsLHy4",
+  authDomain: "tracking-8dcfb.firebaseapp.com",
+  projectId: "tracking-8dcfb",
+  storageBucket: "tracking-8dcfb.firebasestorage.app",
+  messagingSenderId: "465120787511",
+  appId: "1:465120787511:web:6d32f8c1b358fc96a2d3b2",
+  measurementId: "G-71B5Z83C5M"
+};
+
+// Khởi tạo ứng dụng Firebase
+firebase.initializeApp(firebaseConfig);
+const database = firebase.database();
+
 const videoElement = document.getElementById('webcam');
 const canvasElement = document.getElementById('output_canvas');
 const canvasCtx = canvasElement.getContext('2d');
@@ -83,15 +90,33 @@ const stateText = document.getElementById('state-text');
 const guideText = document.getElementById('guide-text');
 const statusBoard = document.getElementById('status-board');
 
-// Đã cập nhật chính xác đường dẫn ảnh trên kho lưu trữ GitHub của bạn
+let dbImages = []; 
 let demoImage = new Image();
 demoImage.src = 'Messenger_creation_9EB2B51C-92B8-488E-9497-D1F38A0530A5.jpeg'; 
 
-document.getElementById('image-loader').addEventListener('change', function(e) {
-    const reader = new FileReader();
-    reader.onload = function(event) { demoImage.src = event.target.result; }
-    if(e.target.files[0]) reader.readAsDataURL(e.target.files[0]);
+// ĐÃ CẬP NHẬT: Trỏ thẳng vào đường dẫn lồng nhau trên database hiện tại của bạn để fix lỗi
+database.ref('images/0/images').on('value', (snapshot) => {
+    const data = snapshot.val();
+    if (data) {
+        dbImages = Object.values(data);
+        console.log("Đã tìm thấy và tải mảng ảnh từ cấu trúc lồng:", dbImages);
+    } else {
+        // Dự phòng nếu sau này bạn đổi về cấu trúc phẳng ở Cách 1
+        database.ref('images').on('value', (snap2) => {
+            const data2 = snap2.val();
+            if(data2) dbImages = Object.values(data2);
+        });
+    }
 });
+
+// Hàm lấy ngẫu nhiên ảnh
+function pickRandomImage() {
+    if (dbImages.length > 0) {
+        const randomIndex = Math.floor(Math.random() * dbImages.length);
+        demoImage.src = dbImages[randomIndex];
+        console.log("Đã chọn ngẫu nhiên ảnh:", dbImages[randomIndex]);
+    }
+}
 
 function getDistance(p1, p2) {
     return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
@@ -104,6 +129,7 @@ const MIN_CHANGE_THRESHOLD = 4;
 let history_p1 = []; 
 let history_p2 = []; 
 let last_fixed_points = null; 
+let isPinchingBefore = false; 
 
 function getSmoothPoint(new_point, history) {
     history.push(new_point);
@@ -117,24 +143,18 @@ function resetCanvas() {
     last_fixed_points = null;
     history_p1 = [];
     history_p2 = [];
+    isPinchingBefore = false;
 }
 
-// Vẽ góc vuông công nghệ (HUD corners)
 function drawHUDCorners(x, y, w, h, size = 20) {
     canvasCtx.strokeStyle = '#00ffcc';
     canvasCtx.lineWidth = 4;
     canvasCtx.shadowBlur = 15;
     canvasCtx.shadowColor = '#00ffcc';
-
-    // Góc trên bên trái
     canvasCtx.beginPath(); canvasCtx.moveTo(x + size, y); canvasCtx.lineTo(x, y); canvasCtx.lineTo(x, y + size); canvasCtx.stroke();
-    // Góc trên bên phải
     canvasCtx.beginPath(); canvasCtx.moveTo(x + w - size, y); canvasCtx.lineTo(x + w, y); canvasCtx.lineTo(x + w, y + size); canvasCtx.stroke();
-    // Góc dưới bên trái
     canvasCtx.beginPath(); canvasCtx.moveTo(x, y + h - size); canvasCtx.lineTo(x, y + h); canvasCtx.lineTo(x + size, y + h); canvasCtx.stroke();
-    // Góc dưới bên phải
     canvasCtx.beginPath(); canvasCtx.moveTo(x + w - size, y + h); canvasCtx.lineTo(x + w, y + h); canvasCtx.lineTo(x + w, y + h - size); canvasCtx.stroke();
-
     canvasCtx.shadowBlur = 0;
 }
 
@@ -155,7 +175,7 @@ function onResults(results) {
             }
         }
 
-        // Cử chỉ xóa rảnh tay khi dang rộng 2 tay về hai rìa màn hình
+        // Cử chỉ vung rộng 2 tay ra 2 rìa màn hình để xóa ảnh
         if (results.multiHandLandmarks.length === 2 && currentPinchPoints.length === 0) {
             const hand1_x = results.multiHandLandmarks[0][0].x * canvasElement.width;
             const hand2_x = results.multiHandLandmarks[1][0].x * canvasElement.width;
@@ -166,10 +186,15 @@ function onResults(results) {
     }
 
     if (currentPinchPoints.length === 2) {
+        if (!isPinchingBefore) {
+            pickRandomImage();
+            isPinchingBefore = true;
+        }
+
         statusBoard.style.borderLeftColor = "#00ffcc";
-        stateText.innerText = "ĐANG ĐIỀU CHỈNH ẢNH";
+        stateText.innerText = "ĐANG ĐIỀU CHỈNH ẢNH RANDOM";
         stateText.style.color = "#00ffcc";
-        guideText.innerText = "Kéo giãn 2 tay để chỉnh kích cỡ. Buông tay ra để GHIM ảnh cố định.";
+        guideText.innerText = "Kéo giãn 2 tay để chỉnh kích cỡ. Buông tay ra để GHIM cố định bức ảnh này.";
 
         const smooth_p1 = getSmoothPoint(currentPinchPoints[0], history_p1);
         const smooth_p2 = getSmoothPoint(currentPinchPoints[1], history_p2);
@@ -187,16 +212,18 @@ function onResults(results) {
         canvasCtx.shadowBlur = 0;
     
     } else if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        isPinchingBefore = false; 
+
         if (last_fixed_points) {
             statusBoard.style.borderLeftColor = "#ffaa00";
             stateText.innerText = "ẢNH ĐÃ ĐƯỢC GHIM";
             stateText.style.color = "#ffaa00";
-            guideText.innerText = "Chụm 2 tay lại để vẽ tiếp. Hoặc dang rộng 2 tay sang 2 bên rìa màn hình để xóa nhanh.";
+            guideText.innerText = "Chụm 2 tay lại một lần nữa để lấy NGẪN NHIÊN một bức ảnh khác từ Database.";
         } else {
             statusBoard.style.borderLeftColor = "#0099ff";
             stateText.innerText = "SẴN SÀNG QUÉT TAY";
             stateText.style.color = "#0099ff";
-            guideText.innerText = "Hãy CHỤM ngón cái và ngón trỏ của CẢ 2 TAY lại để tạo khung ảnh.";
+            guideText.innerText = "Hãy CHỤM ngón cái và ngón trỏ của CẢ 2 TAY lại để gọi ảnh ngẫu nhiên.";
         }
         
         for (let i = 0; i < results.multiHandLandmarks.length; i++) {
@@ -205,6 +232,7 @@ function onResults(results) {
             canvasCtx.beginPath(); canvasCtx.arc(indexTip.x * canvasElement.width, indexTip.y * canvasElement.height, 6, 0, 2 * Math.PI); canvasCtx.fill();
         }
     } else {
+        isPinchingBefore = false;
         if (!last_fixed_points) {
             stateText.innerText = "ĐANG QUÉT MÔI TRƯỜNG...";
             stateText.style.color = "#ecf0f1";
@@ -229,7 +257,6 @@ function onResults(results) {
             if (demoImage.complete) {
                 canvasCtx.drawImage(demoImage, minX, minY, width, height);
             }
-
             drawHUDCorners(minX, minY, width, height, 20);
         }
     }
