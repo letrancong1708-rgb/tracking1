@@ -58,7 +58,7 @@
     <canvas id="output_canvas" width="640" height="480"></canvas>
     
     <div id="status-board">
-        Trạng thái: <span id="state-text" class="highlight">Đang kết nối Firebase & Camera...</span><br>
+        Trạng thái: <span id="state-text" class="highlight">Đang kết nối Firebase...</span><br>
         <span id="guide-text">Hệ thống đang đồng bộ dữ liệu ảnh miễn phí.</span>
         
         <div class="upload-zone">
@@ -68,7 +68,7 @@
 </div>
 
 <script>
-// Cấu hình Firebase của bạn
+// Cấu hình Firebase
 const firebaseConfig = {
   apiKey: "AIzaSyBfsARtLpOaWlAvugaU5q1t3thYMRsLHy4",
   authDomain: "tracking-8dcfb.firebaseapp.com",
@@ -94,27 +94,48 @@ let dbImages = [];
 let demoImage = new Image();
 demoImage.src = 'Messenger_creation_9EB2B51C-92B8-488E-9497-D1F38A0530A5.jpeg'; 
 
-// ĐÃ CẬP NHẬT: Trỏ thẳng vào đường dẫn lồng nhau trên database hiện tại của bạn để fix lỗi
-database.ref('images/0/images').on('value', (snapshot) => {
-    const data = snapshot.val();
-    if (data) {
-        dbImages = Object.values(data);
-        console.log("Đã tìm thấy và tải mảng ảnh từ cấu trúc lồng:", dbImages);
-    } else {
-        // Dự phòng nếu sau này bạn đổi về cấu trúc phẳng ở Cách 1
-        database.ref('images').on('value', (snap2) => {
-            const data2 = snap2.val();
-            if(data2) dbImages = Object.values(data2);
-        });
-    }
-});
+// Hàm lắng nghe Firebase động (Quét cả cấu trúc lồng lẫn cấu trúc phẳng)
+function connectFirebase() {
+    // 1. Thử quét cấu trúc phẳng trước
+    database.ref('images').on('value', (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+            // Nếu data chứa mảng lồng bên trong như cấu trúc hiện tại của bạn
+            if (data[0] && data[0].images) {
+                dbImages = Object.values(data[0].images);
+            } else if (typeof data === 'object') {
+                // Nếu là cấu trúc phẳng chuẩn hoặc mảng thông thường
+                dbImages = Object.values(data);
+            }
+            stateText.innerText = "ĐỒNG BỘ FIREBASE THÀNH CÔNG (" + dbImages.length + " ẢNH)";
+            stateText.style.color = "#00ffcc";
+            console.log("Danh sách ảnh hoạt động:", dbImages);
+        } else {
+            stateText.innerText = "FIREBASE TRỐNG DỮ LIỆU";
+            stateText.style.color = "#ff4444";
+        }
+    }, (error) => {
+        console.error(error);
+        stateText.innerText = "LỖI BẢO MẬT FIREBASE (XEM TAB RULES)";
+        stateText.style.color = "#ff4444";
+        guideText.innerText = "Hãy chuyển mục '.read' thành true trong tab Rules của Firebase Console.";
+    });
+}
 
-// Hàm lấy ngẫu nhiên ảnh
+connectFirebase();
+
+// Hàm lấy ngẫu nhiên ảnh khi chụm tay
 function pickRandomImage() {
     if (dbImages.length > 0) {
         const randomIndex = Math.floor(Math.random() * dbImages.length);
-        demoImage.src = dbImages[randomIndex];
-        console.log("Đã chọn ngẫu nhiên ảnh:", dbImages[randomIndex]);
+        // Xử lý trường hợp mảng trả về một object chứa mảng con
+        let selectedSrc = dbImages[randomIndex];
+        if (typeof selectedSrc === 'object' && selectedSrc.images) {
+            const subArray = Object.values(selectedSrc.images);
+            selectedSrc = subArray[Math.floor(Math.random() * subArray.length)];
+        }
+        demoImage.src = selectedSrc;
+        console.log("Đã đổi sang ảnh ngẫu nhiên mới:", selectedSrc);
     }
 }
 
@@ -175,7 +196,6 @@ function onResults(results) {
             }
         }
 
-        // Cử chỉ vung rộng 2 tay ra 2 rìa màn hình để xóa ảnh
         if (results.multiHandLandmarks.length === 2 && currentPinchPoints.length === 0) {
             const hand1_x = results.multiHandLandmarks[0][0].x * canvasElement.width;
             const hand2_x = results.multiHandLandmarks[1][0].x * canvasElement.width;
@@ -284,8 +304,6 @@ if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
         });
     }).catch((err) => {
         console.error(err);
-        stateText.innerText = "YÊU CẦU CAMERA";
-        guideText.innerText = "Hãy bật quyền cho phép Camera của trình duyệt để tiếp tục.";
     });
 }
 </script>
