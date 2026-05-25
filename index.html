@@ -3,53 +3,25 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hand Tracking - Fix Random Tuyệt Đối</title>
+    <title>Hand Tracking - Random Chuẩn Hóa</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
-    
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
 
     <style>
         body {
-            margin: 0; padding: 0;
-            background: #0d0f12;
-            display: flex; flex-direction: column;
-            justify-content: center; align-items: center;
-            height: 100vh; font-family: 'Segoe UI', -apple-system, sans-serif;
-            overflow: hidden;
+            margin: 0; padding: 0; background: #0d0f12;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            height: 100vh; font-family: 'Segoe UI', sans-serif; overflow: hidden;
         }
-        .container { 
-            position: relative; 
-            width: 100vw; height: 100vh;
-            max-width: 640px; max-height: 480px; 
-            aspect-ratio: 4/3;
-        }
+        .container { position: relative; width: 100vw; height: 100vh; max-width: 640px; max-height: 480px; aspect-ratio: 4/3; }
         #webcam { display: none; }
-        #output_canvas {
-            position: absolute; left: 0; top: 0;
-            width: 100%; height: 100%;
-            transform: scaleX(-1);
-            border-radius: 16px;
-            box-shadow: 0 20px 50px rgba(0, 255, 204, 0.15);
-            transition: filter 0.1s ease;
-        }
-        #status-board {
-            position: absolute; top: 20px; left: 20px; right: 20px;
-            background: rgba(15, 22, 28, 0.9); color: #ecf0f1;
-            padding: 18px; border-radius: 12px; font-size: 14px;
-            line-height: 1.6; border-left: 5px solid #00ffcc;
-            z-index: 10;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.4);
-            backdrop-filter: blur(10px);
-        }
-        .highlight { color: #00ffcc; font-weight: bold; text-shadow: 0 0 10px rgba(0,255,204,0.5); }
+        #output_canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; transform: scaleX(-1); border-radius: 16px; box-shadow: 0 20px 50px rgba(0, 255, 204, 0.15); transition: filter 0.1s ease; }
+        #status-board { position: absolute; top: 20px; left: 20px; right: 20px; background: rgba(15, 22, 28, 0.9); color: #ecf0f1; padding: 18px; border-radius: 12px; font-size: 14px; line-height: 1.6; border-left: 5px solid #00ffcc; z-index: 10; backdrop-filter: blur(10px); }
+        .highlight { color: #00ffcc; font-weight: bold; }
         .upload-zone { margin-top: 12px; }
-        .clear-btn {
-            background: rgba(255, 68, 68, 0.2); color: #ff4444;
-            padding: 8px 16px; border: 1px solid #ff4444; border-radius: 6px;
-            font-weight: bold; cursor: pointer; font-size: 13px;
-        }
+        .clear-btn { background: rgba(255, 68, 68, 0.2); color: #ff4444; padding: 8px 16px; border: 1px solid #ff4444; border-radius: 6px; font-weight: bold; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -57,30 +29,23 @@
 <div class="container">
     <video id="webcam" autoplay playsinline muted></video>
     <canvas id="output_canvas" width="640" height="480"></canvas>
-    
     <div id="status-board">
-        Trạng thái: <span id="state-text" class="highlight">Đang quét Firebase...</span><br>
-        <span id="guide-text">Hệ thống đang nạp dữ liệu từ Realtime Database.</span>
-        
-        <div class="upload-zone">
-            <button class="clear-btn" onclick="resetCanvas()">Xóa ảnh hiện tại</button>
-        </div>
+        Trạng thái: <span id="state-text" class="highlight">Đang quét Firebase phẳng...</span><br>
+        <span id="guide-text">Hệ thống đang nạp dữ liệu ảnh.</span>
+        <div class="upload-zone"><button class="clear-btn" onclick="resetCanvas()">Xóa ảnh hiện tại</button></div>
     </div>
 </div>
 
 <script>
-// Cấu hình Firebase gốc của bạn
 const firebaseConfig = {
   apiKey: "AIzaSyBfsARtLpOaWlAvugaU5q1t3thYMRsLHy4",
   authDomain: "tracking-8dcfb.firebaseapp.com",
   projectId: "tracking-8dcfb",
   storageBucket: "tracking-8dcfb.firebasestorage.app",
   messagingSenderId: "465120787511",
-  appId: "1:465120787511:web:6d32f8c1b358fc96a2d3b2",
-  measurementId: "G-71B5Z83C5M"
+  appId: "1:465120787511:web:6d32f8c1b358fc96a2d3b2"
 };
 
-// Khởi tạo Firebase
 firebase.initializeApp(firebaseConfig);
 const database = firebase.database();
 
@@ -89,80 +54,47 @@ const canvasElement = document.getElementById('output_canvas');
 const canvasCtx = canvasElement.getContext('2d');
 const stateText = document.getElementById('state-text');
 const guideText = document.getElementById('guide-text');
-const statusBoard = document.getElementById('status-board');
 
 let dbImages = []; 
 let lastSelectedIndex = -1; 
 let demoImage = new Image();
-// Ảnh khởi đầu mặc định
 demoImage.src = 'Messenger_creation_9EB2B51C-92B8-488E-9497-D1F38A0530A5.jpeg'; 
 
-// THUẬT TOÁN KẾT NỐI VÀ ÉP KIỂU CHUẨN XÁC ĐA TẦNG
+// Đọc trực tiếp từ node phẳng 'images' chuẩn hóa
 database.ref('images').on('value', (snapshot) => {
-    const rawData = snapshot.val();
-    if (rawData) {
-        let TargetData = rawData;
-        
-        // Nếu tồn tại cấu trúc lồng images -> images
-        if (rawData.images) {
-            TargetData = rawData.images;
-        }
-        
-        // Kiểm tra xem dữ liệu trả về là Mảng hay là Đối tượng để trích xuất chuẩn xác
-        if (Array.isArray(TargetData)) {
-            dbImages = TargetData.filter(item => item !== null && item !== undefined);
-        } else if (typeof TargetData === 'object') {
-            dbImages = Object.values(TargetData);
-        }
-        
-        // Hiển thị số lượng ảnh nhận được lên màn hình để kiểm tra trực quan
-        stateText.innerText = "KẾT NỐI THÀNH CÔNG (ĐÃ NHẬN " + dbImages.length + " ẢNH)";
+    const data = snapshot.val();
+    if (data) {
+        // Chuyển đổi linh hoạt dữ liệu Firebase sang mảng sạch
+        dbImages = Array.isArray(data) ? data.filter(i => i) : Object.values(data);
+        stateText.innerText = "ĐÃ ĐỒNG BỘ: " + dbImages.length + " ẢNH TRÊN FIREBASE";
         stateText.style.color = "#00ffcc";
-        console.log("Mảng ảnh đã sẵn sàng để random:", dbImages);
     } else {
-        stateText.innerText = "DỮ LIỆU FIREBASE TRỐNG";
+        stateText.innerText = "LỖI: DATABASE ĐANG TRỐNG";
         stateText.style.color = "#ff4444";
     }
-}, (error) => {
-    stateText.innerText = "LỖI BẢO MẬT: BỊ CHẶN (RULES)";
-    stateText.style.color = "#ff4444";
 });
 
-// HÀM RANDOM THAY ĐỔI ẢNH TUYỆT ĐỐI
 function pickRandomImage() {
-    if (dbImages && dbImages.length > 1) {
+    if (dbImages.length > 1) {
         let randomIndex = Math.floor(Math.random() * dbImages.length);
-        
-        // Vòng lặp chống trùng ảnh cũ liền kề
         while (randomIndex === lastSelectedIndex) {
             randomIndex = Math.floor(Math.random() * dbImages.length);
         }
         lastSelectedIndex = randomIndex;
+        demoImage.src = dbImages[randomIndex];
         
-        const selectedSrc = dbImages[randomIndex];
-        demoImage.src = selectedSrc;
-        console.log("Kích hoạt đổi ảnh ngẫu nhiên ->", selectedSrc);
-
-        // Hiệu ứng nháy sáng báo hiệu đổi dữ liệu thành công
-        canvasElement.style.filter = "brightness(1.8) contrast(1.2)";
-        setTimeout(() => { canvasElement.style.filter = "none"; }, 120);
-    } else if (dbImages && dbImages.length === 1) {
-        demoImage.src = dbImages[0];
+        // Hiệu ứng nháy sáng xác nhận đổi ảnh
+        canvasElement.style.filter = "brightness(1.7)";
+        setTimeout(() => { canvasElement.style.filter = "none"; }, 100);
     }
 }
 
-function getDistance(p1, p2) {
-    return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
-}
+function getDistance(p1, p2) { return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2)); }
 
-// CẤU HÌNH ĐIỀU KHIỂN ĐỘ NHẠY
 const PINCH_THRESHOLD = 45; 
 const SMOOTHING_FACTOR = 4;   
-const MIN_CHANGE_THRESHOLD = 4; 
-let history_p1 = []; 
-let history_p2 = []; 
-let last_fixed_points = null; 
-let isPinchingBefore = false; 
+let history_p1 = []; let history_p2 = []; 
+let last_fixed_points = null; let isPinchingBefore = false; 
 
 function getSmoothPoint(new_point, history) {
     history.push(new_point);
@@ -173,30 +105,13 @@ function getSmoothPoint(new_point, history) {
 }
 
 function resetCanvas() {
-    last_fixed_points = null;
-    history_p1 = [];
-    history_p2 = [];
-    isPinchingBefore = false;
-    lastSelectedIndex = -1;
+    last_fixed_points = null; history_p1 = []; history_p2 = []; isPinchingBefore = false; lastSelectedIndex = -1;
     demoImage.src = 'Messenger_creation_9EB2B51C-92B8-488E-9497-D1F38A0530A5.jpeg';
-}
-
-function drawHUDCorners(x, y, w, h, size = 20) {
-    canvasCtx.strokeStyle = '#00ffcc';
-    canvasCtx.lineWidth = 4;
-    canvasCtx.shadowBlur = 15;
-    canvasCtx.shadowColor = '#00ffcc';
-    canvasCtx.beginPath(); canvasCtx.moveTo(x + size, y); canvasCtx.lineTo(x, y); canvasCtx.lineTo(x, y + size); canvasCtx.stroke();
-    canvasCtx.beginPath(); canvasCtx.moveTo(x + w - size, y); canvasCtx.lineTo(x + w, y); canvasCtx.lineTo(x + w, y + size); canvasCtx.stroke();
-    canvasCtx.beginPath(); canvasCtx.moveTo(x, y + h - size); canvasCtx.lineTo(x, y + h); canvasCtx.lineTo(x + size, y + h); canvasCtx.stroke();
-    canvasCtx.beginPath(); canvasCtx.moveTo(x + w - size, y + h); canvasCtx.lineTo(x + w, y + h); canvasCtx.lineTo(x + w, y + h - size); canvasCtx.stroke();
-    canvasCtx.shadowBlur = 0;
 }
 
 function onResults(results) {
     canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
     canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
-
     let currentPinchPoints = [];
 
     if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
@@ -204,111 +119,56 @@ function onResults(results) {
             const landmarks = results.multiHandLandmarks[i];
             const thumbTip = { x: landmarks[4].x * canvasElement.width, y: landmarks[4].y * canvasElement.height };
             const indexTip = { x: landmarks[8].x * canvasElement.width, y: landmarks[8].y * canvasElement.height };
-            
             if (getDistance(thumbTip, indexTip) < PINCH_THRESHOLD) {
                 currentPinchPoints.push({ x: (thumbTip.x + indexTip.x) / 2, y: (thumbTip.y + indexTip.y) / 2 });
-            }
-        }
-
-        if (results.multiHandLandmarks.length === 2 && currentPinchPoints.length === 0) {
-            const hand1_x = results.multiHandLandmarks[0][0].x * canvasElement.width;
-            const hand2_x = results.multiHandLandmarks[1][0].x * canvasElement.width;
-            if (Math.abs(hand1_x - hand2_x) > canvasElement.width * 0.85) {
-                resetCanvas();
             }
         }
     }
 
     if (currentPinchPoints.length === 2) {
-        // Khoảnh khắc chạm 2 đầu ngón tay vào nhau -> Kích hoạt lệnh đổi ảnh
         if (!isPinchingBefore) {
             pickRandomImage();
             isPinchingBefore = true;
         }
-
-        statusBoard.style.borderLeftColor = "#00ffcc";
         stateText.innerText = "ĐANG ĐIỀU CHỈNH ẢNH RANDOM";
-        stateText.style.color = "#00ffcc";
-        guideText.innerText = "Kéo giãn 2 tay để chỉnh kích cỡ. Buông tay ra để GHIM cố định.";
+        guideText.innerText = "Kéo giãn 2 tay để chỉnh kích cỡ. Buông tay ra để GHIM.";
 
         const smooth_p1 = getSmoothPoint(currentPinchPoints[0], history_p1);
         const smooth_p2 = getSmoothPoint(currentPinchPoints[1], history_p2);
-        
-        if (!last_fixed_points || 
-            getDistance(smooth_p1, last_fixed_points.p1) > MIN_CHANGE_THRESHOLD || 
-            getDistance(smooth_p2, last_fixed_points.p2) > MIN_CHANGE_THRESHOLD) {
-            last_fixed_points = { p1: smooth_p1, p2: smooth_p2 };
-        }
+        last_fixed_points = { p1: smooth_p1, p2: smooth_p2 };
 
         canvasCtx.fillStyle = '#00ffcc';
-        canvasCtx.shadowBlur = 10; canvasCtx.shadowColor = '#00ffcc';
-        canvasCtx.beginPath(); canvasCtx.arc(smooth_p1.x, smooth_p1.y, 8, 0, 2 * Math.PI); canvasCtx.fill();
-        canvasCtx.beginPath(); canvasCtx.arc(smooth_p2.x, smooth_p2.y, 8, 0, 2 * Math.PI); canvasCtx.fill();
-        canvasCtx.shadowBlur = 0;
-    
+        canvasCtx.beginPath(); canvasCtx.arc(smooth_p1.x, smooth_p1.y, 6, 0, 2 * Math.PI); canvasCtx.fill();
+        canvasCtx.beginPath(); canvasCtx.arc(smooth_p2.x, smooth_p2.y, 6, 0, 2 * Math.PI); canvasCtx.fill();
     } else if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
         isPinchingBefore = false; 
-
         if (last_fixed_points) {
-            statusBoard.style.borderLeftColor = "#ffaa00";
             stateText.innerText = "ẢNH ĐÃ ĐƯỢC GHIM";
-            stateText.style.color = "#ffaa00";
-            guideText.innerText = "Chụm 2 tay lại một lần nữa để lấy NGẪN NHIÊN một bức ảnh khác.";
+            guideText.innerText = "Chụm 2 tay lại một lần nữa để lấy NGẪN NHIÊN ảnh khác.";
         } else {
-            statusBoard.style.borderLeftColor = "#0099ff";
             stateText.innerText = "SẴN SÀNG QUÉT TAY";
-            stateText.style.color = "#0099ff";
-            guideText.innerText = "Hãy CHỤM ngón cái và ngón trỏ của CẢ 2 TAY lại để gọi ảnh ngẫu nhiên.";
-        }
-        
-        for (let i = 0; i < results.multiHandLandmarks.length; i++) {
-            const indexTip = results.multiHandLandmarks[i][8];
-            canvasCtx.fillStyle = 'rgba(0, 255, 204, 0.4)';
-            canvasCtx.beginPath(); canvasCtx.arc(indexTip.x * canvasElement.width, indexTip.y * canvasElement.height, 6, 0, 2 * Math.PI); canvasCtx.fill();
-        }
-    } else {
-        isPinchingBefore = false;
-        if (!last_fixed_points) {
-            stateText.innerText = "ĐANG QUÉT MÔI TRƯỜNG...";
-            stateText.style.color = "#ecf0f1";
-            guideText.innerText = "Hãy đưa cả 2 bàn tay vào trước ống kính camera.";
+            guideText.innerText = "CHỤM ngón cái và ngón trỏ của CẢ 2 TAY lại để gọi ảnh ngẫu nhiên.";
         }
     }
 
     if (last_fixed_points) {
         const { p1, p2 } = last_fixed_points;
-        const minX = Math.min(p1.x, p2.x);
-        const maxX = Math.max(p1.x, p2.x);
-        const minY = Math.min(p1.y, p2.y);
-        const maxY = Math.max(p1.y, p2.y);
-        const width = maxX - minX;
-        const height = maxY - minY;
+        const minX = Math.min(p1.x, p2.x); const maxX = Math.max(p1.x, p2.x);
+        const minY = Math.min(p1.y, p2.y); const maxY = Math.max(p1.y, p2.y);
+        const width = maxX - minX; const height = maxY - minY;
 
-        if (width > 20 && height > 20) {
-            canvasCtx.strokeStyle = 'rgba(0, 255, 204, 0.2)';
-            canvasCtx.lineWidth = 1;
-            canvasCtx.strokeRect(minX, minY, width, height);
-
-            if (demoImage.complete) {
-                canvasCtx.drawImage(demoImage, minX, minY, width, height);
-            }
-            drawHUDCorners(minX, minY, width, height, 20);
+        if (width > 20 && height > 20 && demoImage.complete) {
+            canvasCtx.drawImage(demoImage, minX, minY, width, height);
         }
     }
 }
 
-const hands = new Hands({
-    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
-});
-hands.setOptions({
-    maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.65, minTrackingConfidence: 0.65
-});
+const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
+hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.65, minTrackingConfidence: 0.65 });
 hands.onResults(onResults);
 
 if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-    navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } }
-    }).then((stream) => {
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: 640, height: 480 } }).then((stream) => {
         videoElement.srcObject = stream;
         videoElement.addEventListener('loadeddata', () => {
             async function predictWebcam() {
@@ -317,11 +177,8 @@ if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
             }
             predictWebcam();
         });
-    }).catch((err) => {
-        console.error(err);
     });
 }
 </script>
-
 </body>
 </html>
